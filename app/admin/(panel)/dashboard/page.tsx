@@ -1,18 +1,18 @@
-import { getDb } from "@/lib/mongodb";
-import { COLLECTIONS } from "@/lib/models";
+import { connectToDatabase } from "@/lib/mongodb";
+import { AdminUser, Post } from "@/lib/models";
 import StatsCard from "../../components/StatsCard";
 
 export const dynamic = "force-dynamic";
 
 async function getDashboardStats() {
-  const db = await getDb();
+  await connectToDatabase();
   const [totalUsers, totalPosts, publishedPosts, draftPosts, recentUsers, recentPosts] = await Promise.all([
-    db.collection(COLLECTIONS.ADMIN_USERS).countDocuments(),
-    db.collection(COLLECTIONS.POSTS).countDocuments(),
-    db.collection(COLLECTIONS.POSTS).countDocuments({ status: "published" }),
-    db.collection(COLLECTIONS.POSTS).countDocuments({ status: "draft" }),
-    db.collection(COLLECTIONS.ADMIN_USERS).find({}, { projection: { password: 0 } }).sort({ createdAt: -1 }).limit(5).toArray(),
-    db.collection(COLLECTIONS.POSTS).find().sort({ createdAt: -1 }).limit(5).toArray(),
+    AdminUser.countDocuments(),
+    Post.countDocuments(),
+    Post.countDocuments({ status: "published" }),
+    Post.countDocuments({ status: "draft" }),
+    AdminUser.find({}, "-password").sort({ createdAt: -1 }).limit(5).lean(),
+    Post.find().sort({ createdAt: -1 }).limit(5).lean(),
   ]);
   return { totalUsers, totalPosts, publishedPosts, draftPosts, recentUsers, recentPosts };
 }
@@ -60,7 +60,7 @@ export default async function DashboardPage() {
             Recent Users
           </h2>
           <div className="space-y-3">
-            {stats.recentUsers.map((user) => (
+            {stats.recentUsers.map((user: any) => (
               <div key={String(user._id)} className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/[0.02] transition-colors">
                 <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500/20 to-purple-500/20 flex items-center justify-center ring-1 ring-white/10">
                   <span className="text-xs font-medium text-indigo-300">{(user.name as string)?.charAt(0).toUpperCase()}</span>
@@ -85,7 +85,7 @@ export default async function DashboardPage() {
             Recent Posts
           </h2>
           <div className="space-y-3">
-            {stats.recentPosts.map((post) => (
+            {stats.recentPosts.map((post: any) => (
               <div key={String(post._id)} className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/[0.02] transition-colors">
                 <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center ring-1 ring-white/10">
                   <svg className="w-4 h-4 text-purple-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>

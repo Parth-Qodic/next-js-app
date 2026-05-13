@@ -15,9 +15,10 @@ interface DataTableProps {
   deleteEndpoint?: string;
   onEdit?: (row: Record<string, unknown>) => void;
   idKey?: string;
+  canDelete?: boolean;
 }
 
-export default function DataTable({ columns, data, deleteEndpoint, onEdit, idKey = "_id" }: DataTableProps) {
+export default function DataTable({ columns, data, deleteEndpoint, onEdit, idKey = "_id", canDelete = true }: DataTableProps) {
   const router = useRouter();
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -74,7 +75,7 @@ export default function DataTable({ columns, data, deleteEndpoint, onEdit, idKey
                           Edit
                         </button>
                       )}
-                      {deleteEndpoint && (
+                      {deleteEndpoint && canDelete && (
                         <button onClick={() => handleDelete(id)} disabled={deletingId === id} className="px-3 py-1.5 text-xs font-medium rounded-lg text-red-400 hover:bg-red-500/10 border border-red-500/20 transition-all disabled:opacity-50">
                           {deletingId === id ? "..." : "Delete"}
                         </button>

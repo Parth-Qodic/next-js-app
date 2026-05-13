@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAdminStore } from "@/lib/store";
 import DataTable from "../../components/DataTable";
 import Modal from "../../components/Modal";
 
@@ -11,11 +12,14 @@ interface Props { posts: Post[]; pagination: Pagination; currentSearch: string; 
 
 export default function PostsClient({ posts, pagination, currentSearch, currentStatus }: Props) {
   const router = useRouter();
+  const currentUser = useAdminStore((state) => state.user);
   const [search, setSearch] = useState(currentSearch);
   const [showModal, setShowModal] = useState(false);
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [formData, setFormData] = useState({ title: "", content: "", excerpt: "", status: "draft", tags: "" });
   const [saving, setSaving] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -80,7 +84,13 @@ export default function PostsClient({ posts, pagination, currentSearch, currentS
       </div>
 
       <div className="animate-fade-in" style={{ animationDelay: "0.1s" }}>
-        <DataTable columns={columns} data={posts as unknown as Record<string, unknown>[]} deleteEndpoint="/api/admin/posts" onEdit={openEdit} />
+        <DataTable 
+          columns={columns} 
+          data={posts as unknown as Record<string, unknown>[]} 
+          deleteEndpoint="/api/admin/posts" 
+          onEdit={openEdit} 
+          canDelete={mounted ? currentUser?.role === "admin" : false}
+        />
       </div>
 
       {pagination.totalPages > 1 && (

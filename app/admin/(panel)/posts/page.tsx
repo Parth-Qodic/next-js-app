@@ -1,6 +1,5 @@
-import { getDb } from "@/lib/mongodb";
-import { COLLECTIONS } from "@/lib/models";
-import type { Post } from "@/lib/models";
+import { connectToDatabase } from "@/lib/mongodb";
+import { Post } from "@/lib/models";
 import PostsClient from "./PostsClient";
 
 export const dynamic = "force-dynamic";
@@ -12,17 +11,19 @@ interface PageProps {
 async function getPosts(page: number, search: string, status: string) {
   const limit = 10;
   const skip = (page - 1) * limit;
-  const db = await getDb();
-  const col = db.collection<Post>(COLLECTIONS.POSTS);
-  const filter: Record<string, unknown> = {};
+  await connectToDatabase();
+  
+  const filter: any = {};
   if (search) { filter.$or = [{ title: { $regex: search, $options: "i" } }, { author: { $regex: search, $options: "i" } }]; }
   if (status === "draft" || status === "published") { filter.status = status; }
+  
   const [posts, total] = await Promise.all([
-    col.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).toArray(),
-    col.countDocuments(filter),
+    Post.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    Post.countDocuments(filter),
   ]);
+  
   return {
-    posts: posts.map((p) => ({ ...p, _id: p._id.toString(), createdAt: p.createdAt.toISOString(), updatedAt: p.updatedAt.toISOString() })),
+    posts: posts.map((p: any) => ({ ...p, _id: p._id.toString(), createdAt: p.createdAt?.toISOString(), updatedAt: p.updatedAt?.toISOString() })),
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
   };
 }

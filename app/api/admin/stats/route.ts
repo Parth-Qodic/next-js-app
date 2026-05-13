@@ -1,5 +1,5 @@
-import { getDb } from "@/lib/mongodb";
-import { COLLECTIONS } from "@/lib/models";
+import { connectToDatabase } from "@/lib/mongodb";
+import { AdminUser, Post } from "@/lib/models";
 import { getSession } from "@/lib/session";
 
 export async function GET() {
@@ -8,26 +8,16 @@ export async function GET() {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const db = await getDb();
+  await connectToDatabase();
 
   const [totalUsers, totalPosts, publishedPosts, draftPosts, recentUsers, recentPosts] =
     await Promise.all([
-      db.collection(COLLECTIONS.ADMIN_USERS).countDocuments(),
-      db.collection(COLLECTIONS.POSTS).countDocuments(),
-      db.collection(COLLECTIONS.POSTS).countDocuments({ status: "published" }),
-      db.collection(COLLECTIONS.POSTS).countDocuments({ status: "draft" }),
-      db
-        .collection(COLLECTIONS.ADMIN_USERS)
-        .find({}, { projection: { password: 0 } })
-        .sort({ createdAt: -1 })
-        .limit(5)
-        .toArray(),
-      db
-        .collection(COLLECTIONS.POSTS)
-        .find()
-        .sort({ createdAt: -1 })
-        .limit(5)
-        .toArray(),
+      AdminUser.countDocuments(),
+      Post.countDocuments(),
+      Post.countDocuments({ status: "published" }),
+      Post.countDocuments({ status: "draft" }),
+      AdminUser.find({}, "-password").sort({ createdAt: -1 }).limit(5).lean(),
+      Post.find().sort({ createdAt: -1 }).limit(5).lean(),
     ]);
 
   return Response.json({

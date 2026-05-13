@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAdminStore } from "@/lib/store";
 import DataTable from "../../components/DataTable";
 import Modal from "../../components/Modal";
 
@@ -11,11 +12,14 @@ interface Props { users: User[]; pagination: Pagination; currentSearch: string; 
 
 export default function UsersClient({ users, pagination, currentSearch }: Props) {
   const router = useRouter();
+  const currentUser = useAdminStore((state) => state.user);
   const [search, setSearch] = useState(currentSearch);
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [formData, setFormData] = useState({ name: "", email: "", password: "", role: "editor" });
   const [saving, setSaving] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   function handleSearch(e: React.FormEvent) { e.preventDefault(); router.push(`/admin/users?search=${encodeURIComponent(search)}`); }
   function openCreate() { setEditingUser(null); setFormData({ name: "", email: "", password: "", role: "editor" }); setShowModal(true); }
@@ -69,8 +73,14 @@ export default function UsersClient({ users, pagination, currentSearch }: Props)
         <button onClick={openCreate} className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white text-sm font-semibold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30 hover:scale-[1.02] transition-all">+ Add User</button>
       </div>
 
-      <div className="animate-fade-in" style={{ animationDelay: "0.1s" }}>
-        <DataTable columns={columns} data={users as unknown as Record<string, unknown>[]} deleteEndpoint="/api/admin/users" onEdit={openEdit} />
+      <div className="animate-fade-in" style={{ animationDelay: "0.2s" }}>
+        <DataTable 
+          columns={columns} 
+          data={users as unknown as Record<string, unknown>[]} 
+          deleteEndpoint="/api/admin/users" 
+          onEdit={openEdit} 
+          canDelete={mounted ? currentUser?.role === "admin" : false}
+        />
       </div>
 
       {pagination.totalPages > 1 && (

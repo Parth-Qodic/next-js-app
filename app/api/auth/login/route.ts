@@ -1,6 +1,5 @@
-import { getDb } from "@/lib/mongodb";
-import { COLLECTIONS } from "@/lib/models";
-import type { AdminUser } from "@/lib/models";
+import { connectToDatabase } from "@/lib/mongodb";
+import { AdminUser } from "@/lib/models";
 import { compare } from "bcryptjs";
 import { createSession } from "@/lib/session";
 
@@ -15,10 +14,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const db = await getDb();
-    const user = await db
-      .collection<AdminUser>(COLLECTIONS.ADMIN_USERS)
-      .findOne({ email });
+    await connectToDatabase();
+    const user = await AdminUser.findOne({ email }).lean();
 
     if (!user) {
       return Response.json(
@@ -27,7 +24,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const isValid = await compare(password, user.password);
+    const isValid = await compare(password, user.password as string);
     if (!isValid) {
       return Response.json(
         { error: "Invalid credentials" },

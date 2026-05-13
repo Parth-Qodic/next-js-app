@@ -1,114 +1,90 @@
-import { type NextRequest } from "next/server";
-import { getDb } from "@/lib/mongodb";
-import { COLLECTIONS } from "@/lib/models";
-import type { AdminUser } from "@/lib/models";
-import { hash } from "bcryptjs";
+import { connectToDatabase } from "@/lib/mongodb";
+import { AdminUser } from "@/lib/models";
 import { getSession } from "@/lib/session";
+import { hash } from "bcryptjs";
 
-export async function GET(request: NextRequest) {
-  const session = await getSession();
-  if (!session) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+export async function GET(request: Request) {
+  try {
+    const session = await getSession();
+    if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+
+    const { searchParams } = new URL(request.url);
+    const search = searchParams.get("search") || "";
+    const page = parseInt(searchParams.get("page") || "1");
+    const limit = parseInt(searchParams.get("limit") || "10");
+    const skip = (page - 1) * limit;
+
+    await connectToDatabase();
+
+    const query = search
+      ? {
+          $or: [
+            { name: { $regex: search, $options: "i" } },
+            { email: { $regex: search, $options: "i" } },
+          ],
+        }
+      : {};
+
+    const [users, total] = await Promise.all([
+      AdminUser.find(query, "-password").sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      AdminUser.countDocuments(query),
+    ]);
+
+    return Response.json({
+      users,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    return Response.json({ error: "Failed to fetch users" }, { status: 500 });
   }
-
-  const searchParams = request.nextUrl.searchParams;
-  const page = parseInt(searchParams.get("page") || "1");
-  const limit = parseInt(searchParams.get("limit") || "10");
-  const search = searchParams.get("search") || "";
-  const skip = (page - 1) * limit;
-
-  const db = await getDb();
-  const collection = db.collection<AdminUser>(COLLECTIONS.ADMIN_USERS);
-
-  const filter = search
-    ? {
-        $or: [
-          { name: { $regex: search, $options: "i" } },
-          { email: { $regex: search, $options: "i" } },
-        ],
-      }
-    : {};
-
-  const [users, total] = await Promise.all([
-    collection
-      .find(filter, { projection: { password: 0 } })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .toArray(),
-    collection.countDocuments(filter),
-  ]);
-
-  return Response.json({
-    users,
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
-    },
-  });
 }
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   try {
+    const session = await getSession();
+    if (!session || session.role !== "admin") {
+      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await request.json();
     const { name, email, password, role } = body;
 
     if (!name || !email || !password) {
-      return Response.json(
-        { error: "Name, email, and password are required" },
-        { status: 400 }
-      );
+      return Response.json({ error: "Name, email, and password are required" }, { status: 400 });
     }
 
-    const db = await getDb();
-    const collection = db.collection<AdminUser>(COLLECTIONS.ADMIN_USERS);
+    await connectToDatabase();
 
-    // Check if email already exists
-    const existing = await collection.findOne({ email });
+    // Mongoose will automatically throw E11000 if email is not unique,
+    // but we can manually check for a better error message.
+    const existing = await AdminUser.findOne({ email });
     if (existing) {
-      return Response.json(
-        { error: "Email already exists" },
-        { status: 409 }
-      );
+      return Response.json({ error: "Email already exists" }, { status: 409 });
     }
 
     const hashedPassword = await hash(password, 12);
-    const now = new Date();
 
-    const result = await collection.insertOne({
+    const newUser = await AdminUser.create({
       name,
       email,
       password: hashedPassword,
       role: role || "editor",
-      createdAt: now,
-      updatedAt: now,
     });
 
-    return Response.json(
-      {
-        success: true,
-        user: {
-          _id: result.insertedId,
-          name,
-          email,
-          role: role || "editor",
-          createdAt: now,
-        },
-      },
-      { status: 201 }
-    );
-  } catch (error) {
-    console.error("Create user error:", error);
-    return Response.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    const userObj = newUser.toObject();
+    delete userObj.password;
+
+    return Response.json({ user: userObj }, { status: 201 });
+  } catch (error: any) {
+    // Handle Mongoose unique constraint error
+    if (error.code === 11000) {
+      return Response.json({ error: "Email already exists" }, { status: 409 });
+    }
+    return Response.json({ error: "Failed to create user" }, { status: 500 });
   }
 }

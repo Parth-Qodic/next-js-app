@@ -1,6 +1,5 @@
-import { getDb } from "@/lib/mongodb";
-import { COLLECTIONS } from "@/lib/models";
-import type { AdminUser } from "@/lib/models";
+import { connectToDatabase } from "@/lib/mongodb";
+import { AdminUser } from "@/lib/models";
 import UsersClient from "./UsersClient";
 
 export const dynamic = "force-dynamic";
@@ -12,17 +11,19 @@ interface PageProps {
 async function getUsers(page: number, search: string) {
   const limit = 10;
   const skip = (page - 1) * limit;
-  const db = await getDb();
-  const col = db.collection<AdminUser>(COLLECTIONS.ADMIN_USERS);
+  await connectToDatabase();
+  
   const filter = search
     ? { $or: [{ name: { $regex: search, $options: "i" } }, { email: { $regex: search, $options: "i" } }] }
     : {};
+    
   const [users, total] = await Promise.all([
-    col.find(filter, { projection: { password: 0 } }).sort({ createdAt: -1 }).skip(skip).limit(limit).toArray(),
-    col.countDocuments(filter),
+    AdminUser.find(filter, "-password").sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    AdminUser.countDocuments(filter),
   ]);
+  
   return {
-    users: users.map((u) => ({ ...u, _id: u._id.toString(), createdAt: u.createdAt.toISOString(), updatedAt: u.updatedAt.toISOString() })),
+    users: users.map((u: any) => ({ ...u, _id: u._id.toString(), createdAt: u.createdAt?.toISOString(), updatedAt: u.updatedAt?.toISOString() })),
     pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
   };
 }

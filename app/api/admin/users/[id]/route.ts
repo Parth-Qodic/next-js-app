@@ -1,83 +1,53 @@
-import { ObjectId } from "mongodb";
-import { getDb } from "@/lib/mongodb";
-import { COLLECTIONS } from "@/lib/models";
-import type { AdminUser } from "@/lib/models";
-import { hash } from "bcryptjs";
+import { connectToDatabase } from "@/lib/mongodb";
+import { AdminUser } from "@/lib/models";
 import { getSession } from "@/lib/session";
-
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const session = await getSession();
-  if (!session) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { id } = await params;
-
-  if (!ObjectId.isValid(id)) {
-    return Response.json({ error: "Invalid ID" }, { status: 400 });
-  }
-
-  const db = await getDb();
-  const user = await db
-    .collection<AdminUser>(COLLECTIONS.ADMIN_USERS)
-    .findOne({ _id: new ObjectId(id) }, { projection: { password: 0 } });
-
-  if (!user) {
-    return Response.json({ error: "User not found" }, { status: 404 });
-  }
-
-  return Response.json({ user });
-}
+import { hash } from "bcryptjs";
 
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { id } = await params;
-
-  if (!ObjectId.isValid(id)) {
-    return Response.json({ error: "Invalid ID" }, { status: 400 });
-  }
-
   try {
+    const { id } = await params;
+    const session = await getSession();
+    if (!session || session.role !== "admin") {
+      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await request.json();
-    const updateData: Record<string, unknown> = {
-      updatedAt: new Date(),
-    };
+    const { name, email, password, role } = body;
 
-    if (body.name) updateData.name = body.name;
-    if (body.email) updateData.email = body.email;
-    if (body.role) updateData.role = body.role;
-    if (body.password) updateData.password = await hash(body.password, 12);
+    await connectToDatabase();
 
-    const db = await getDb();
-    const result = await db
-      .collection<AdminUser>(COLLECTIONS.ADMIN_USERS)
-      .findOneAndUpdate(
-        { _id: new ObjectId(id) },
-        { $set: updateData },
-        { returnDocument: "after", projection: { password: 0 } }
-      );
+    // Check if email already exists for another user
+    if (email) {
+      const existing = await AdminUser.findOne({ email, _id: { $ne: id } });
+      if (existing) {
+        return Response.json({ error: "Email already exists" }, { status: 409 });
+      }
+    }
 
-    if (!result) {
+    const updateData: any = { name, email, role };
+    if (password) {
+      updateData.password = await hash(password, 12);
+    }
+
+    const updatedUser = await AdminUser.findByIdAndUpdate(
+      id,
+      { $set: updateData },
+      { new: true, select: "-password" }
+    ).lean();
+
+    if (!updatedUser) {
       return Response.json({ error: "User not found" }, { status: 404 });
     }
 
-    return Response.json({ success: true, user: result });
-  } catch (error) {
-    console.error("Update user error:", error);
-    return Response.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return Response.json({ user: updatedUser });
+  } catch (error: any) {
+    if (error.code === 11000) {
+      return Response.json({ error: "Email already exists" }, { status: 409 });
+    }
+    return Response.json({ error: "Failed to update user" }, { status: 500 });
   }
 }
 
@@ -85,25 +55,27 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const { id } = await params;
+    const session = await getSession();
+    if (!session || session.role !== "admin") {
+      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Prevent deleting oneself
+    if (session.userId === id) {
+      return Response.json({ error: "Cannot delete yourself" }, { status: 400 });
+    }
+
+    await connectToDatabase();
+    const result = await AdminUser.findByIdAndDelete(id);
+
+    if (!result) {
+      return Response.json({ error: "User not found" }, { status: 404 });
+    }
+
+    return Response.json({ success: true });
+  } catch (error) {
+    return Response.json({ error: "Failed to delete user" }, { status: 500 });
   }
-
-  const { id } = await params;
-
-  if (!ObjectId.isValid(id)) {
-    return Response.json({ error: "Invalid ID" }, { status: 400 });
-  }
-
-  const db = await getDb();
-  const result = await db
-    .collection<AdminUser>(COLLECTIONS.ADMIN_USERS)
-    .deleteOne({ _id: new ObjectId(id) });
-
-  if (result.deletedCount === 0) {
-    return Response.json({ error: "User not found" }, { status: 404 });
-  }
-
-  return Response.json({ success: true });
 }

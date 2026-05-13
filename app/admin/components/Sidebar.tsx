@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useAdminStore } from "@/lib/store";
+import { useEffect, useState } from "react";
 
 const navItems = [
   {
@@ -35,6 +37,12 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const user = useAdminStore((state) => state.user);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-64 glass border-r border-white/[0.06] flex flex-col z-40">
@@ -89,11 +97,13 @@ export default function Sidebar() {
       <div className="p-4 border-t border-white/[0.06]">
         <div className="flex items-center gap-3 px-3 py-2">
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500/20 to-purple-500/20 flex items-center justify-center ring-1 ring-white/10">
-            <span className="text-xs font-medium text-indigo-300">A</span>
+            <span className="text-xs font-medium text-indigo-300">
+              {mounted ? (user?.name?.charAt(0).toUpperCase() || "U") : ""}
+            </span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-zinc-300 truncate">Admin</p>
-            <p className="text-[10px] text-zinc-500 truncate">admin@admin.com</p>
+            <p className="text-xs font-medium text-zinc-300 truncate">{mounted ? (user?.name || "User") : ""}</p>
+            <p className="text-[10px] text-zinc-500 truncate">{mounted ? (user?.email || "") : ""}</p>
           </div>
         </div>
       </div>

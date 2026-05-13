@@ -1,31 +1,22 @@
-import { MongoClient } from "mongodb";
 import { hash } from "bcryptjs";
-import type { AdminUser, Post } from "./models";
-import { COLLECTIONS } from "./models";
-
-const MONGODB_URI =
-  process.env.MONGODB_URI || "mongodb://localhost:27017/admin-panel";
+import { connectToDatabase } from "./mongodb";
+import { AdminUser, Post } from "./models";
 
 async function seed() {
   console.log("🌱 Seeding database...");
 
-  const client = new MongoClient(MONGODB_URI);
-  await client.connect();
-  const db = client.db();
+  await connectToDatabase();
 
   // ── Seed Admin User ──────────────────────────────────────────
-  const usersCol = db.collection<AdminUser>(COLLECTIONS.ADMIN_USERS);
-  const existingAdmin = await usersCol.findOne({ email: "admin@admin.com" });
+  const existingAdmin = await AdminUser.findOne({ email: "admin@admin.com" });
 
   if (!existingAdmin) {
     const hashedPassword = await hash("admin123", 12);
-    await usersCol.insertOne({
+    await AdminUser.create({
       name: "Admin",
       email: "admin@admin.com",
       password: hashedPassword,
       role: "admin",
-      createdAt: new Date(),
-      updatedAt: new Date(),
     });
     console.log("✅ Admin user created (admin@admin.com / admin123)");
   } else {
@@ -33,47 +24,40 @@ async function seed() {
   }
 
   // ── Seed Sample Users ────────────────────────────────────────
-  const sampleUsers: Omit<AdminUser, "_id">[] = [
+  const sampleUsers = [
     {
       name: "Jane Cooper",
       email: "jane@example.com",
       password: await hash("password123", 12),
       role: "editor",
-      createdAt: new Date("2025-12-01"),
-      updatedAt: new Date("2025-12-01"),
     },
     {
       name: "Alex Johnson",
       email: "alex@example.com",
       password: await hash("password123", 12),
       role: "editor",
-      createdAt: new Date("2026-01-15"),
-      updatedAt: new Date("2026-01-15"),
     },
     {
       name: "Sarah Miller",
       email: "sarah@example.com",
       password: await hash("password123", 12),
       role: "admin",
-      createdAt: new Date("2026-02-20"),
-      updatedAt: new Date("2026-02-20"),
     },
   ];
 
   for (const user of sampleUsers) {
-    const exists = await usersCol.findOne({ email: user.email });
+    const exists = await AdminUser.findOne({ email: user.email });
     if (!exists) {
-      await usersCol.insertOne(user);
+      await AdminUser.create(user);
       console.log(`✅ User "${user.name}" created`);
     }
   }
 
   // ── Seed Sample Posts ────────────────────────────────────────
-  const postsCol = db.collection<Post>(COLLECTIONS.POSTS);
-  const postCount = await postsCol.countDocuments();
+  const postCount = await Post.countDocuments();
 
   if (postCount === 0) {
-    const samplePosts: Omit<Post, "_id">[] = [
+    const samplePosts = [
       {
         title: "Getting Started with Next.js 16",
         slug: "getting-started-nextjs-16",
@@ -84,8 +68,6 @@ async function seed() {
         author: "Admin",
         authorId: "admin",
         tags: ["nextjs", "react", "tutorial"],
-        createdAt: new Date("2026-03-01"),
-        updatedAt: new Date("2026-03-01"),
       },
       {
         title: "MongoDB Best Practices for Node.js",
@@ -97,8 +79,6 @@ async function seed() {
         author: "Jane Cooper",
         authorId: "jane",
         tags: ["mongodb", "nodejs", "database"],
-        createdAt: new Date("2026-03-15"),
-        updatedAt: new Date("2026-03-15"),
       },
       {
         title: "Building Admin Panels with SSR",
@@ -110,8 +90,6 @@ async function seed() {
         author: "Alex Johnson",
         authorId: "alex",
         tags: ["ssr", "admin", "nextjs"],
-        createdAt: new Date("2026-04-10"),
-        updatedAt: new Date("2026-04-10"),
       },
       {
         title: "TypeScript Tips for Full-Stack Development",
@@ -123,8 +101,6 @@ async function seed() {
         author: "Sarah Miller",
         authorId: "sarah",
         tags: ["typescript", "fullstack", "tips"],
-        createdAt: new Date("2026-04-25"),
-        updatedAt: new Date("2026-04-25"),
       },
       {
         title: "Authentication Patterns in Modern Web Apps",
@@ -136,26 +112,20 @@ async function seed() {
         author: "Admin",
         authorId: "admin",
         tags: ["auth", "security", "jwt"],
-        createdAt: new Date("2026-05-05"),
-        updatedAt: new Date("2026-05-05"),
       },
     ];
 
-    await postsCol.insertMany(samplePosts);
+    await Post.insertMany(samplePosts);
     console.log(`✅ ${samplePosts.length} sample posts created`);
   } else {
     console.log("ℹ️  Posts already exist");
   }
 
-  // ── Create indexes ───────────────────────────────────────────
-  await usersCol.createIndex({ email: 1 }, { unique: true });
-  await postsCol.createIndex({ slug: 1 }, { unique: true });
-  await postsCol.createIndex({ status: 1 });
-  await postsCol.createIndex({ createdAt: -1 });
-  console.log("✅ Indexes created");
-
-  await client.close();
   console.log("🎉 Seeding complete!");
+  process.exit(0);
 }
 
-seed().catch(console.error);
+seed().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

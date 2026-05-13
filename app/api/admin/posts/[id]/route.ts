@@ -1,89 +1,50 @@
-import { ObjectId } from "mongodb";
-import { getDb } from "@/lib/mongodb";
-import { COLLECTIONS } from "@/lib/models";
-import type { Post } from "@/lib/models";
+import { connectToDatabase } from "@/lib/mongodb";
+import { Post } from "@/lib/models";
 import { getSession } from "@/lib/session";
-
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const session = await getSession();
-  if (!session) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { id } = await params;
-
-  if (!ObjectId.isValid(id)) {
-    return Response.json({ error: "Invalid ID" }, { status: 400 });
-  }
-
-  const db = await getDb();
-  const post = await db
-    .collection<Post>(COLLECTIONS.POSTS)
-    .findOne({ _id: new ObjectId(id) });
-
-  if (!post) {
-    return Response.json({ error: "Post not found" }, { status: 404 });
-  }
-
-  return Response.json({ post });
-}
 
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { id } = await params;
-
-  if (!ObjectId.isValid(id)) {
-    return Response.json({ error: "Invalid ID" }, { status: 400 });
-  }
-
   try {
+    const { id } = await params;
+    const session = await getSession();
+    if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+
     const body = await request.json();
-    const updateData: Record<string, unknown> = {
-      updatedAt: new Date(),
-    };
+    const { title, content, excerpt, status, tags } = body;
 
-    if (body.title) {
-      updateData.title = body.title;
-      updateData.slug = body.title
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/(^-|-$)/g, "");
-    }
-    if (body.content) updateData.content = body.content;
-    if (body.excerpt) updateData.excerpt = body.excerpt;
-    if (body.status) updateData.status = body.status;
-    if (body.tags) updateData.tags = body.tags;
+    await connectToDatabase();
 
-    const db = await getDb();
-    const result = await db
-      .collection<Post>(COLLECTIONS.POSTS)
-      .findOneAndUpdate(
-        { _id: new ObjectId(id) },
-        { $set: updateData },
-        { returnDocument: "after" }
-      );
-
-    if (!result) {
+    const existingPost = await Post.findById(id);
+    if (!existingPost) {
       return Response.json({ error: "Post not found" }, { status: 404 });
     }
 
-    return Response.json({ success: true, post: result });
+    // Only allow editors to update their own posts
+    if (session.role === "editor" && existingPost.authorId !== session.userId) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const updateData: any = { content, excerpt, status, tags };
+
+    if (title && title !== existingPost.title) {
+      updateData.title = title;
+      updateData.slug = title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)+/g, "") + "-" + Date.now().toString().slice(-4);
+    }
+
+    const updatedPost = await Post.findByIdAndUpdate(
+      id,
+      { $set: updateData },
+      { new: true }
+    ).lean();
+
+    return Response.json({ post: updatedPost });
   } catch (error) {
-    console.error("Update post error:", error);
-    return Response.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return Response.json({ error: "Failed to update post" }, { status: 500 });
   }
 }
 
@@ -91,25 +52,26 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSession();
-  if (!session) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const { id } = await params;
+    const session = await getSession();
+    if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+
+    await connectToDatabase();
+
+    const existingPost = await Post.findById(id);
+    if (!existingPost) {
+      return Response.json({ error: "Post not found" }, { status: 404 });
+    }
+
+    if (session.role !== "admin") {
+      return Response.json({ error: "Forbidden: Only admins can delete posts" }, { status: 403 });
+    }
+
+    await Post.findByIdAndDelete(id);
+
+    return Response.json({ success: true });
+  } catch (error) {
+    return Response.json({ error: "Failed to delete post" }, { status: 500 });
   }
-
-  const { id } = await params;
-
-  if (!ObjectId.isValid(id)) {
-    return Response.json({ error: "Invalid ID" }, { status: 400 });
-  }
-
-  const db = await getDb();
-  const result = await db
-    .collection<Post>(COLLECTIONS.POSTS)
-    .deleteOne({ _id: new ObjectId(id) });
-
-  if (result.deletedCount === 0) {
-    return Response.json({ error: "Post not found" }, { status: 404 });
-  }
-
-  return Response.json({ success: true });
 }
